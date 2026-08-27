@@ -1,43 +1,295 @@
-name: Deploy to EC2
+name: Deploy to EC2 - Troubleshooting
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            cd ~/docker-production
+      # --------------------------------------------------
+      # 1. Checkout repository
+      # --------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            echo "Pulling latest Docker image..."
+      # --------------------------------------------------
+      # 2. Check whether GitHub Secrets exist
+      # --------------------------------------------------
+      - name: Check GitHub Secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          echo "======================================"
+          echo "Checking GitHub Secrets"
+          echo "======================================"
 
-            export IMAGE_TAG=v1.0.4
+          if [ -z "$EC2_HOST" ]; then
+            echo "❌ EC2_HOST is EMPTY"
+            exit 1
+          else
+            echo "✅ EC2_HOST exists"
+          fi
 
-            echo "Deploying image: imgogul/docker-cicd:$IMAGE_TAG"
+          if [ -z "$EC2_USERNAME" ]; then
+            echo "❌ EC2_USERNAME is EMPTY"
+            exit 1
+          else
+            echo "✅ EC2_USERNAME exists"
+          fi
 
-            docker compose pull api
+          if [ -z "$SSH_KEY" ]; then
+            echo "❌ EC2_SSH_KEY is EMPTY"
+            exit 1
+          else
+            echo "✅ EC2_SSH_KEY exists"
+          fi
 
-            docker compose up -d api
+      # --------------------------------------------------
+      # 3. Create PEM file from GitHub Secret
+      # --------------------------------------------------
+      - name: Create SSH private key
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          echo "======================================"
+          echo "Creating SSH private key"
+          echo "======================================"
 
-            echo "Waiting for application..."
+          printf '%s\n' "$SSH_KEY" > /tmp/ec2-key.pem
 
-            sleep 10
+          chmod 600 /tmp/ec2-key.pem
 
-            docker compose ps
+          echo "✅ SSH key file created"
 
-            echo "Checking application health..."
+      # --------------------------------------------------
+      # 4. Check PEM format WITHOUT exposing private key
+      # --------------------------------------------------
+      - name: Check SSH key format
+        run: |
+          echo "======================================"
+          echo "Checking SSH key format"
+          echo "======================================"
 
-            curl -f http://localhost:3000/health
+          echo "First line:"
+          head -n 1 /tmp/ec2-key.pem
 
-            echo "Deployment successful!"
+          echo "Last line:"
+          tail -n 1 /tmp/ec2-key.pem
+
+          echo "Number of lines:"
+          wc -l /tmp/ec2-key.pem
+
+      # --------------------------------------------------
+      # 5. Validate private key
+      # --------------------------------------------------
+      - name: Validate SSH private key
+        run: |
+          echo "======================================"
+          echo "Validating SSH private key"
+          echo "======================================"
+
+          ssh-keygen -y \
+            -f /tmp/ec2-key.pem \
+            > /tmp/ec2-public-key.pub
+
+          echo "✅ SSH private key is valid"
+
+      # --------------------------------------------------
+      # 6. Test SSH connection
+      # --------------------------------------------------
+      - name: Test SSH connection
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Testing SSH connection"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "echo '======================================'; \
+             echo '✅ SSH CONNECTION SUCCESSFUL'; \
+             echo '======================================'; \
+             hostname; \
+             whoami"
+
+      # --------------------------------------------------
+      # 7. Check Docker on EC2
+      # --------------------------------------------------
+      - name: Check Docker on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Checking Docker on EC2"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "docker --version && docker compose version"
+
+      # --------------------------------------------------
+      # 8. Check production directory
+      # --------------------------------------------------
+      - name: Check production directory
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Checking production directory"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "cd ~/docker-production && pwd && ls -la"
+
+      # --------------------------------------------------
+      # 9. Check Docker Compose configuration
+      # --------------------------------------------------
+      - name: Check Docker Compose
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Checking Docker Compose"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "cd ~/docker-production && docker compose config"
+
+      # --------------------------------------------------
+      # 10. Test Docker Hub image
+      # --------------------------------------------------
+      - name: Test Docker image pull
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Testing Docker image pull"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "docker pull imgogul/docker-cicd:v1.0.4"
+
+      # --------------------------------------------------
+      # 11. Deploy application
+      # --------------------------------------------------
+      - name: Deploy application
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Deploying application"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "cd ~/docker-production && \
+             echo 'Pulling latest Docker image...' && \
+             docker compose pull api && \
+             echo 'Starting API...' && \
+             docker compose up -d api"
+
+      # --------------------------------------------------
+      # 12. Wait for application
+      # --------------------------------------------------
+      - name: Wait for application
+        run: |
+          echo "Waiting 10 seconds for application..."
+          sleep 10
+
+      # --------------------------------------------------
+      # 13. Check containers
+      # --------------------------------------------------
+      - name: Check containers
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Checking containers"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "cd ~/docker-production && docker compose ps"
+
+      # --------------------------------------------------
+      # 14. Check API logs
+      # --------------------------------------------------
+      - name: Check API logs
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "API Logs"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "cd ~/docker-production && docker compose logs --tail=50 api"
+
+      # --------------------------------------------------
+      # 15. Health check
+      # --------------------------------------------------
+      - name: Health check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "======================================"
+          echo "Checking application health"
+          echo "======================================"
+
+          ssh \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
+            -i /tmp/ec2-key.pem \
+            "$EC2_USERNAME@$EC2_HOST" \
+            "curl -f http://localhost:3000/health"
+
+      # --------------------------------------------------
+      # 16. Deployment successful
+      # --------------------------------------------------
+      - name: Deployment successful
+        run: |
+          echo "======================================"
+          echo "🚀 DEPLOYMENT SUCCESSFUL"
+          echo "======================================"
