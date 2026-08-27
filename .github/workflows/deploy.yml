@@ -1,0 +1,42 @@
+name: Deploy to EC2
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/docker-production
+
+            echo "Pulling latest Docker image..."
+
+            export IMAGE_TAG=${{ github.ref_name }}
+
+            echo "Deploying image: imgogul/docker-cicd:$IMAGE_TAG"
+
+            docker compose pull api
+
+            docker compose up -d api
+
+            echo "Waiting for application..."
+
+            sleep 10
+
+            docker compose ps
+
+            echo "Checking application health..."
+
+            curl -f http://localhost:3000/health
+
+            echo "Deployment successful!"
