@@ -19,6 +19,7 @@ async function startServer() {
 
     console.log("PostgreSQL connected successfully");
     console.log("Day 19 - Production deployment v1.0.1");
+    console.log("Day 20 - Automated EC2 deployment v1.0.2");
 
     app.get("/", (req, res) => {
       res.json({
