@@ -18,11 +18,11 @@ async function startServer() {
     await db.connect();
 
     console.log("PostgreSQL connected successfully");
-    console.log("Automated EC2 deployment v1.0.3");
+    console.log("Automated EC2 deployment v1.0.11");
 
     app.get("/", (req, res) => {
       res.json({
-        message: "Docker Day 16 API",
+        message: "Docker Day 19 API",
       });
     });
 
