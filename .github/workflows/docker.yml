@@ -1,35 +1,52 @@
-name: Deploy to EC2
+name: Docker CI/CD
 
 on:
-  workflow_run:
-    workflows: ["Docker CI/CD"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
 
 jobs:
-  deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  docker:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.2.2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/docker-production
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-            export IMAGE_TAG=${{ github.event.workflow_run.head_branch }}
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: imgogul/docker-cicd
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-            echo "Deploying image: imgogul/docker-cicd:$IMAGE_TAG"
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          
+            - name: Save tag for deploy workflow
+        run: echo "${{ github.ref_name }}" > image_tag.txt
 
-            docker compose pull api
-            docker compose up -d api
-
-            sleep 10
-            docker compose ps
-
-            curl -f http://localhost:3000/health
-            echo "Deployment successful!"
+      - name: Upload tag artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-tag
+          path: image_tag.txt

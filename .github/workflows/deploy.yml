@@ -1,15 +1,28 @@
 name: Deploy to EC2
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_run:
+    workflows: ["Docker CI/CD"]
+    types:
+      - completed
 
 jobs:
   deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
+      - name: Download tag artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tag
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read tag
+        id: read_tag
+        run: echo "tag=$(cat image_tag.txt)" >> "$GITHUB_OUTPUT"
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -19,24 +32,15 @@ jobs:
           script: |
             cd ~/docker-production
 
-            echo "Pulling latest Docker image..."
-
-            export IMAGE_TAG=${{ github.ref_name }}
+            export IMAGE_TAG=${{ steps.read_tag.outputs.tag }}
 
             echo "Deploying image: imgogul/docker-cicd:$IMAGE_TAG"
 
             docker compose pull api
-
             docker compose up -d api
 
-            echo "Waiting for application..."
-
             sleep 10
-
             docker compose ps
 
-            echo "Checking application health..."
-
             curl -f http://localhost:3000/health
-
             echo "Deployment successful!"
