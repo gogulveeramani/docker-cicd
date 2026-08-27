@@ -1,16 +1,14 @@
-name: Deploy to EC2
+name: Test EC2 SSH
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_dispatch:
 
 jobs:
-  deploy:
+  test-ssh:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to EC2
+      - name: Test SSH connection
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -18,43 +16,11 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           port: 22
           timeout: 30s
-          command_timeout: 10m
+          command_timeout: 1m
           script: |
-            set -e
-
-            cd ~/docker-production
-
-            IMAGE_TAG="${GITHUB_REF_NAME}"
-
-            echo "================================="
-            echo "Deploying version: $IMAGE_TAG"
-            echo "================================="
-
-            export IMAGE_TAG
-
-            echo "Checking Docker Compose configuration..."
-            docker compose config
-
-            echo "Pulling Docker image..."
-            docker compose pull api
-
-            echo "Starting API..."
-            docker compose up -d api
-
-            echo "Waiting for application..."
-            sleep 10
-
-            echo "Container status:"
-            docker compose ps
-
-            echo "Application logs:"
-            docker compose logs --tail=30 api
-
-            echo "Checking health..."
-            curl -f http://localhost:3000/health
-
-            echo ""
-            echo "================================="
-            echo "Deployment successful!"
-            echo "Version: $IMAGE_TAG"
-            echo "================================="
+            echo "SSH connection successful!"
+            whoami
+            hostname
+            pwd
+            docker --version
+            docker compose version
