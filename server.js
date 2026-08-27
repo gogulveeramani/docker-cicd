@@ -18,7 +18,7 @@ async function startServer() {
     await db.connect();
 
     console.log("PostgreSQL connected successfully");
-    console.log("Day 17 - New changes");
+    console.log("Day 19 - Production deployment v1.0.1");
 
     app.get("/", (req, res) => {
       res.json({
